@@ -10,33 +10,68 @@
   <div class="container">
     <h1>🃏 翻牌配对小游戏</h1>
     
-    <div class="game-info">
-      <div class="info-item">
-        <span class="label">⏱️ 用时</span>
-        <span id="timer" class="value">00:00</span>
+    <div id="levelSelectScreen" class="screen">
+      <div class="section-title">
+        <span class="section-icon">🎯</span>
+        <span>选择主题</span>
       </div>
-      <div class="info-item">
-        <span class="label">👆 步数</span>
-        <span id="moves" class="value">0</span>
+      <div id="themeList" class="theme-grid"></div>
+      
+      <div class="section-title">
+        <span class="section-icon">⚡</span>
+        <span>选择难度</span>
       </div>
-      <div class="info-item">
-        <span class="label">✅ 已配对</span>
-        <span id="matched" class="value">0/8</span>
+      <div id="difficultyList" class="difficulty-grid"></div>
+      
+      <div class="section-title">
+        <span class="section-icon">🎮</span>
+        <span>可选关卡</span>
       </div>
+      <div id="levelList" class="level-grid"></div>
     </div>
+    
+    <div id="gameScreen" class="screen hidden">
+      <div class="level-info-bar">
+        <div class="level-badge">
+          <span id="currentThemeIcon"></span>
+          <span id="currentThemeName"></span>
+        </div>
+        <div id="currentDifficultyBadge" class="difficulty-badge"></div>
+        <button id="backToSelectBtn" class="btn btn-small btn-secondary">← 返回选关</button>
+      </div>
+      
+      <div class="game-info">
+        <div class="info-item">
+          <span class="label">⏱️ 用时</span>
+          <span id="timer" class="value">00:00</span>
+          <span class="target">目标: <span id="timeTarget">--:--</span></span>
+        </div>
+        <div class="info-item">
+          <span class="label">👆 步数</span>
+          <span id="moves" class="value">0</span>
+          <span class="target">限制: <span id="moveLimit">--</span></span>
+        </div>
+        <div class="info-item">
+          <span class="label">✅ 已配对</span>
+          <span id="matched" class="value">0/8</span>
+        </div>
+      </div>
 
-    <div class="game-board" id="gameBoard"></div>
+      <div class="game-board" id="gameBoard"></div>
 
-    <div class="controls">
-      <button id="restartBtn" class="btn btn-primary">🔄 重新开始</button>
-      <button id="leaderboardBtn" class="btn btn-secondary">🏆 排行榜</button>
+      <div class="controls">
+        <button id="restartBtn" class="btn btn-primary">🔄 重新开始</button>
+        <button id="leaderboardBtn" class="btn btn-secondary">🏆 排行榜</button>
+      </div>
     </div>
 
     <div id="winModal" class="modal hidden">
       <div class="modal-content">
         <h2>🎉 恭喜通关！</h2>
+        <div id="winLevelInfo" class="win-level-info"></div>
         <p>你的成绩：<span id="finalTime">00:00</span></p>
         <p>总步数：<span id="finalMoves">0</span></p>
+        <div id="starsContainer" class="stars-container"></div>
         <div class="input-group">
           <label for="playerName">输入你的名字：</label>
           <input type="text" id="playerName" placeholder="匿名玩家" maxlength="10">
@@ -45,10 +80,21 @@
         <button id="playAgainBtn" class="btn btn-secondary">再玩一次</button>
       </div>
     </div>
+    
+    <div id="loseModal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="loseTitle">😢 挑战失败</h2>
+        <p id="loseMessage">步数已用尽，再接再厉！</p>
+        <button id="retryBtn" class="btn btn-primary">🔄 再试一次</button>
+        <button id="backToLevelsBtn" class="btn btn-secondary">← 返回选关</button>
+      </div>
+    </div>
 
     <div id="leaderboardModal" class="modal hidden">
       <div class="modal-content">
         <h2>🏆 排行榜</h2>
+        <div id="leaderboardSelector" class="leaderboard-selector"></div>
+        <div id="leaderboardLevelInfo" class="leaderboard-level-info"></div>
         <ol id="leaderboardList" class="leaderboard-list"></ol>
         <button id="closeLeaderboardBtn" class="btn btn-secondary">关闭</button>
       </div>

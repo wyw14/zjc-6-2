@@ -1,32 +1,53 @@
-﻿const API_BASE_URL = 'http://localhost:6031/api';
+const API_BASE_URL = 'http://localhost:6031/api';
 
-const CARD_EMOJIS = {
-  1: '馃惗',
-  2: '馃惐',
-  3: '馃惣',
-  4: '馃',
-  5: '馃',
-  6: '馃惛',
-  7: '馃惖',
-  8: '馃惃'
-};
+const levelSelectScreen = document.getElementById('levelSelectScreen');
+const gameScreen = document.getElementById('gameScreen');
+const themeList = document.getElementById('themeList');
+const difficultyList = document.getElementById('difficultyList');
+const levelList = document.getElementById('levelList');
+const backToSelectBtn = document.getElementById('backToSelectBtn');
+
+const currentThemeIcon = document.getElementById('currentThemeIcon');
+const currentThemeName = document.getElementById('currentThemeName');
+const currentDifficultyBadge = document.getElementById('currentDifficultyBadge');
 
 const gameBoard = document.getElementById('gameBoard');
 const timerEl = document.getElementById('timer');
 const movesEl = document.getElementById('moves');
 const matchedEl = document.getElementById('matched');
+const timeTargetEl = document.getElementById('timeTarget');
+const moveLimitEl = document.getElementById('moveLimit');
 const restartBtn = document.getElementById('restartBtn');
 const leaderboardBtn = document.getElementById('leaderboardBtn');
+
 const winModal = document.getElementById('winModal');
-const leaderboardModal = document.getElementById('leaderboardModal');
+const loseModal = document.getElementById('loseModal');
+const loseTitle = document.getElementById('loseTitle');
+const loseMessage = document.getElementById('loseMessage');
 const finalTimeEl = document.getElementById('finalTime');
 const finalMovesEl = document.getElementById('finalMoves');
+const winLevelInfo = document.getElementById('winLevelInfo');
+const starsContainer = document.getElementById('starsContainer');
 const playerNameInput = document.getElementById('playerName');
 const submitScoreBtn = document.getElementById('submitScoreBtn');
 const playAgainBtn = document.getElementById('playAgainBtn');
+const retryBtn = document.getElementById('retryBtn');
+const backToLevelsBtn = document.getElementById('backToLevelsBtn');
+
+const leaderboardModal = document.getElementById('leaderboardModal');
+const leaderboardSelector = document.getElementById('leaderboardSelector');
+const leaderboardLevelInfo = document.getElementById('leaderboardLevelInfo');
 const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn');
 const leaderboardList = document.getElementById('leaderboardList');
 
+let allLevels = [];
+let allThemes = [];
+let allDifficulties = [];
+let selectedThemeKey = 'all';
+let selectedDifficultyKey = 'all';
+
+let currentLevelConfig = null;
+let currentEmojis = {};
 let cards = [];
 let flippedCards = [];
 let matchedPairs = 0;
@@ -37,10 +58,157 @@ let elapsedTime = 0;
 let gameStarted = false;
 let isProcessing = false;
 
-async function initGame() {
-  resetGameState();
-  const shuffledCards = await fetchShuffledCards();
-  renderCards(shuffledCards);
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+async function loadLevels() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/levels`);
+    const data = await response.json();
+    allLevels = data.levels;
+    allThemes = data.themes;
+    allDifficulties = data.difficulties;
+    renderThemes();
+    renderDifficulties();
+    renderLevels();
+  } catch (error) {
+    console.error('加载关卡配置失败:', error);
+    themeList.innerHTML = '<p class="error-message">加载失败，请刷新重试</p>';
+  }
+}
+
+function renderThemes() {
+  let html = `<button class="theme-card ${selectedThemeKey === 'all' ? 'active' : ''}" data-theme="all">
+    <div class="theme-icon-large">🎨</div>
+    <div class="theme-name">全部主题</div>
+  </button>`;
+  
+  allThemes.forEach(theme => {
+    html += `<button class="theme-card ${selectedThemeKey === theme.key ? 'active' : ''}" data-theme="${theme.key}">
+      <div class="theme-icon-large">${theme.icon}</div>
+      <div class="theme-name">${theme.name}</div>
+      <div class="theme-desc">${theme.description}</div>
+    </button>`;
+  });
+  
+  themeList.innerHTML = html;
+  
+  themeList.querySelectorAll('.theme-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedThemeKey = card.dataset.theme;
+      renderThemes();
+      renderLevels();
+    });
+  });
+}
+
+function renderDifficulties() {
+  let html = `<button class="difficulty-card ${selectedDifficultyKey === 'all' ? 'active' : ''}" data-difficulty="all" style="--diff-color:#667eea">
+    <div class="diff-name">全部难度</div>
+    <div class="diff-desc">显示所有关卡</div>
+  </button>`;
+  
+  allDifficulties.forEach(diff => {
+    html += `<button class="difficulty-card ${selectedDifficultyKey === diff.key ? 'active' : ''}" data-difficulty="${diff.key}" style="--diff-color:${diff.color}">
+      <div class="diff-name">${diff.name}</div>
+      <div class="diff-desc">${diff.description}</div>
+    </button>`;
+  });
+  
+  difficultyList.innerHTML = html;
+  
+  difficultyList.querySelectorAll('.difficulty-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedDifficultyKey = card.dataset.difficulty;
+      renderDifficulties();
+      renderLevels();
+    });
+  });
+}
+
+function renderLevels() {
+  const filtered = allLevels.filter(level => {
+    const themeOk = selectedThemeKey === 'all' || level.themeKey === selectedThemeKey;
+    const diffOk = selectedDifficultyKey === 'all' || level.difficultyKey === selectedDifficultyKey;
+    return themeOk && diffOk;
+  });
+  
+  if (filtered.length === 0) {
+    levelList.innerHTML = '<p class="empty-message">没有符合条件的关卡</p>';
+    return;
+  }
+  
+  levelList.innerHTML = filtered.map(level => `
+    <button class="level-card" data-level-id="${level.id}">
+      <div class="level-card-header">
+        <span class="level-theme-icon">${level.themeIcon}</span>
+        <span class="level-difficulty-tag" style="background:${level.difficultyColor}">${level.difficultyName}</span>
+      </div>
+      <div class="level-card-name">${level.themeName}</div>
+      <div class="level-card-stats">
+        <span>🃏 ${level.pairs}对</span>
+        <span>👟 ${level.moveLimit}步</span>
+        <span>⏱️ ${formatTime(level.timeTarget)}</span>
+      </div>
+    </button>
+  `).join('');
+  
+  levelList.querySelectorAll('.level-card').forEach(card => {
+    card.addEventListener('click', () => {
+      startLevel(card.dataset.levelId);
+    });
+  });
+}
+
+async function startLevel(levelId) {
+  const level = allLevels.find(l => l.id === levelId);
+  if (!level) return;
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/shuffle?levelId=${levelId}`);
+    const data = await response.json();
+    
+    currentLevelConfig = data.levelConfig;
+    currentEmojis = {};
+    data.emojis.forEach((emoji, idx) => {
+      currentEmojis[idx] = emoji;
+    });
+    
+    showGameScreen();
+    setupLevelDisplay();
+    resetGameState();
+    renderCards(data.cards);
+  } catch (error) {
+    console.error('启动关卡失败:', error);
+    alert('启动关卡失败，请重试');
+  }
+}
+
+function showGameScreen() {
+  levelSelectScreen.classList.add('hidden');
+  gameScreen.classList.remove('hidden');
+}
+
+function showLevelSelectScreen() {
+  gameScreen.classList.add('hidden');
+  levelSelectScreen.classList.remove('hidden');
+  winModal.classList.add('hidden');
+  loseModal.classList.add('hidden');
+}
+
+function setupLevelDisplay() {
+  const cfg = currentLevelConfig;
+  currentThemeIcon.textContent = cfg.themeIcon;
+  currentThemeName.textContent = cfg.themeName;
+  currentDifficultyBadge.textContent = cfg.difficultyName;
+  currentDifficultyBadge.style.background = cfg.difficultyColor;
+  
+  timeTargetEl.textContent = formatTime(cfg.timeTarget);
+  moveLimitEl.textContent = cfg.moveLimit;
+  gameBoard.style.gridTemplateColumns = `repeat(${cfg.gridCols}, 1fr)`;
 }
 
 function resetGameState() {
@@ -59,27 +227,9 @@ function resetGameState() {
   
   updateTimerDisplay();
   movesEl.textContent = '0';
-  matchedEl.textContent = '0/8';
+  const cfg = currentLevelConfig;
+  matchedEl.textContent = `0/${cfg.pairs}`;
   gameBoard.innerHTML = '';
-}
-
-async function fetchShuffledCards() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/shuffle`);
-    const data = await response.json();
-    return data.cards;
-  } catch (error) {
-    console.error('鑾峰彇娲楃墝鏁版嵁澶辫触:', error);
-    const fallbackCards = [];
-    for (let i = 1; i <= 8; i++) {
-      fallbackCards.push(i, i);
-    }
-    for (let i = fallbackCards.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [fallbackCards[i], fallbackCards[j]] = [fallbackCards[j], fallbackCards[i]];
-    }
-    return fallbackCards;
-  }
 }
 
 function renderCards(cardIds) {
@@ -94,7 +244,7 @@ function renderCards(cardIds) {
     
     const cardFront = document.createElement('div');
     cardFront.className = 'card-face card-front';
-    cardFront.textContent = CARD_EMOJIS[cardId] || '鉂?;
+    cardFront.textContent = currentEmojis[cardId] || '❓';
     
     card.appendChild(cardBack);
     card.appendChild(cardFront);
@@ -141,18 +291,19 @@ function checkMatch() {
   const [card1, card2] = flippedCards;
   const id1 = parseInt(card1.dataset.id);
   const id2 = parseInt(card2.dataset.id);
+  const cfg = currentLevelConfig;
 
   if (id1 === id2) {
     setTimeout(() => {
       card1.classList.add('matched');
       card2.classList.add('matched');
       matchedPairs++;
-      matchedEl.textContent = `${matchedPairs}/8`;
+      matchedEl.textContent = `${matchedPairs}/${cfg.pairs}`;
       flippedCards = [];
       isProcessing = false;
       
-      if (matchedPairs === 8) {
-        endGame();
+      if (matchedPairs === cfg.pairs) {
+        endGame(true);
       }
     }, 500);
   } else {
@@ -161,6 +312,10 @@ function checkMatch() {
       unflipCard(card2);
       flippedCards = [];
       isProcessing = false;
+      
+      if (moves >= cfg.moveLimit && matchedPairs < cfg.pairs) {
+        endGame(false, 'moves');
+      }
     }, 1000);
   }
 }
@@ -170,31 +325,77 @@ function startTimer() {
   timer = setInterval(() => {
     elapsedTime = Date.now() - startTime;
     updateTimerDisplay();
+    
+    const cfg = currentLevelConfig;
+    const elapsedSec = Math.floor(elapsedTime / 1000);
+    if (elapsedSec >= cfg.timeTarget && matchedPairs < cfg.pairs) {
+      endGame(false, 'time');
+    }
   }, 100);
 }
 
 function updateTimerDisplay() {
   const totalSeconds = Math.floor(elapsedTime / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  timerEl.textContent = formatTime(totalSeconds);
 }
 
-function endGame() {
+function calculateStars() {
+  const cfg = currentLevelConfig;
+  const elapsedSec = Math.floor(elapsedTime / 1000);
+  const timeRatio = elapsedSec / cfg.timeTarget;
+  const moveRatio = moves / cfg.moveLimit;
+  
+  let stars = 3;
+  if (timeRatio > 0.8 || moveRatio > 0.85) stars = 2;
+  if (timeRatio > 1 || moveRatio >= 1) stars = 1;
+  
+  return stars;
+}
+
+function renderStars(count) {
+  const filled = '⭐';
+  const empty = '☆';
+  let html = '';
+  for (let i = 0; i < 3; i++) {
+    html += `<span class="star ${i < count ? 'filled' : ''}">${i < count ? filled : empty}</span>`;
+  }
+  starsContainer.innerHTML = html;
+}
+
+function endGame(won, reason = null) {
   clearInterval(timer);
   timer = null;
   
-  finalTimeEl.textContent = timerEl.textContent;
-  finalMovesEl.textContent = moves;
-  
-  setTimeout(() => {
-    winModal.classList.remove('hidden');
-  }, 500);
+  if (won) {
+    const cfg = currentLevelConfig;
+    finalTimeEl.textContent = timerEl.textContent;
+    finalMovesEl.textContent = moves;
+    winLevelInfo.innerHTML = `<span class="level-tag">${cfg.themeIcon} ${cfg.themeName}</span>
+      <span class="difficulty-tag-inline" style="background:${cfg.difficultyColor}">${cfg.difficultyName}</span>`;
+    renderStars(calculateStars());
+    
+    setTimeout(() => {
+      winModal.classList.remove('hidden');
+    }, 500);
+  } else {
+    if (reason === 'moves') {
+      loseTitle.textContent = '😢 步数耗尽';
+      loseMessage.textContent = '已用完所有步数，再接再厉！';
+    } else if (reason === 'time') {
+      loseTitle.textContent = '⏰ 时间到';
+      loseMessage.textContent = '已超过目标时间，下次加油！';
+    }
+    
+    setTimeout(() => {
+      loseModal.classList.remove('hidden');
+    }, 500);
+  }
 }
 
 async function submitScore() {
-  const playerName = playerNameInput.value.trim() || '鍖垮悕鐜╁';
+  const playerName = playerNameInput.value.trim() || '匿名玩家';
   const timeInSeconds = Math.floor(elapsedTime / 1000);
+  const cfg = currentLevelConfig;
 
   try {
     const response = await fetch(`${API_BASE_URL}/score`, {
@@ -204,39 +405,77 @@ async function submitScore() {
       },
       body: JSON.stringify({
         time: timeInSeconds,
-        playerName: playerName
+        moves: moves,
+        playerName: playerName,
+        levelId: cfg.id
       })
     });
 
     const data = await response.json();
     
     if (data.success) {
-      alert(`鎭枩锛佷綘鎺掑悕绗?${data.rank} 鍚嶏紒`);
+      alert(`恭喜！你排名第 ${data.rank} 名！`);
       winModal.classList.add('hidden');
-      showLeaderboard();
+      showLeaderboard(cfg.id);
     }
   } catch (error) {
-    console.error('鎻愪氦鎴愮哗澶辫触:', error);
-    alert('鎻愪氦鎴愮哗澶辫触锛岃绋嶅悗閲嶈瘯');
+    console.error('提交成绩失败:', error);
+    alert('提交成绩失败，请稍后重试');
   }
 }
 
-async function showLeaderboard() {
+async function showLeaderboard(levelId = null) {
+  leaderboardModal.classList.remove('hidden');
+  renderLeaderboardSelector();
+  
+  const targetId = levelId || (currentLevelConfig ? currentLevelConfig.id : allLevels[0]?.id);
+  
+  if (targetId) {
+    await loadAndRenderLeaderboard(targetId);
+  } else {
+    leaderboardList.innerHTML = '<li class="empty-message">请先选择关卡</li>';
+  }
+}
+
+function renderLeaderboardSelector() {
+  leaderboardSelector.innerHTML = `
+    <select id="leaderboardLevelSelect" class="leaderboard-select">
+      ${allLevels.map(level => {
+        const selected = currentLevelConfig && currentLevelConfig.id === level.id ? 'selected' : '';
+        return `<option value="${level.id}" ${selected}>
+          ${level.themeIcon} ${level.themeName} - ${level.difficultyName}
+        </option>`;
+      }).join('')}
+    </select>
+  `;
+  
+  const select = document.getElementById('leaderboardLevelSelect');
+  select.addEventListener('change', () => {
+    loadAndRenderLeaderboard(select.value);
+  });
+}
+
+async function loadAndRenderLeaderboard(levelId) {
   try {
-    const response = await fetch(`${API_BASE_URL}/leaderboard`);
+    const response = await fetch(`${API_BASE_URL}/leaderboard?levelId=${levelId}`);
     const data = await response.json();
+    
+    if (data.levelConfig) {
+      const cfg = data.levelConfig;
+      leaderboardLevelInfo.innerHTML = `<span class="level-tag">${cfg.themeIcon} ${cfg.themeName}</span>
+        <span class="difficulty-tag-inline" style="background:${cfg.difficultyColor}">${cfg.difficultyName}</span>`;
+    }
+    
     renderLeaderboard(data.leaderboard);
   } catch (error) {
-    console.error('鑾峰彇鎺掕姒滃け璐?', error);
-    leaderboardList.innerHTML = '<li>鍔犺浇鎺掕姒滃け璐?/li>';
+    console.error('获取排行榜失败:', error);
+    leaderboardList.innerHTML = '<li class="empty-message">加载排行榜失败</li>';
   }
-  
-  leaderboardModal.classList.remove('hidden');
 }
 
 function renderLeaderboard(leaderboard) {
   if (!leaderboard || leaderboard.length === 0) {
-    leaderboardList.innerHTML = '<li class="empty-message">鏆傛棤璁板綍锛屽揩鏉ユ寫鎴樺惂锛?/li>';
+    leaderboardList.innerHTML = '<li class="empty-message">暂无记录，快来挑战吧！</li>';
     return;
   }
 
@@ -246,31 +485,50 @@ function renderLeaderboard(leaderboard) {
     const li = document.createElement('li');
     li.className = 'rank-item';
     
-    const minutes = Math.floor(entry.time / 60);
-    const seconds = entry.time % 60;
-    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    
     li.innerHTML = `
       <span class="rank-name">
         <span class="rank">#${index + 1}</span>
         <span class="name">${entry.playerName}</span>
       </span>
-      <span class="time">${timeStr}</span>
+      <span class="rank-stats">
+        <span class="time">⏱️ ${formatTime(entry.time)}</span>
+        <span class="moves">👟 ${entry.moves}步</span>
+      </span>
     `;
     
     leaderboardList.appendChild(li);
   });
 }
 
-restartBtn.addEventListener('click', initGame);
+restartBtn.addEventListener('click', () => {
+  if (currentLevelConfig) {
+    startLevel(currentLevelConfig.id);
+  }
+});
+
+backToSelectBtn.addEventListener('click', showLevelSelectScreen);
 playAgainBtn.addEventListener('click', () => {
   winModal.classList.add('hidden');
-  initGame();
+  if (currentLevelConfig) {
+    startLevel(currentLevelConfig.id);
+  }
 });
-leaderboardBtn.addEventListener('click', showLeaderboard);
+
+retryBtn.addEventListener('click', () => {
+  loseModal.classList.add('hidden');
+  if (currentLevelConfig) {
+    startLevel(currentLevelConfig.id);
+  }
+});
+
+backToLevelsBtn.addEventListener('click', showLevelSelectScreen);
+
+leaderboardBtn.addEventListener('click', () => showLeaderboard());
+
 closeLeaderboardBtn.addEventListener('click', () => {
   leaderboardModal.classList.add('hidden');
 });
+
 submitScoreBtn.addEventListener('click', submitScore);
 
-initGame();
+loadLevels();
