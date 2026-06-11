@@ -57,6 +57,40 @@ let startTime = null;
 let elapsedTime = 0;
 let gameStarted = false;
 let isProcessing = false;
+let gameEnded = false;
+let pendingTimeouts = [];
+
+function safeSetTimeout(fn, delay) {
+  if (gameEnded) return -1;
+  const id = setTimeout(() => {
+    pendingTimeouts = pendingTimeouts.filter(tid => tid !== id);
+    if (gameEnded) return;
+    fn();
+  }, delay);
+  pendingTimeouts.push(id);
+  return id;
+}
+
+function clearAllPendingTimeouts() {
+  pendingTimeouts.forEach(id => clearTimeout(id));
+  pendingTimeouts = [];
+}
+
+function validateScoreForSubmission() {
+  const cfg = currentLevelConfig;
+  const timeInSeconds = Math.floor(elapsedTime / 1000);
+  
+  if (!cfg) return { valid: false, reason: '无关卡配置' };
+  if (matchedPairs !== cfg.pairs) return { valid: false, reason: '未完成所有配对' };
+  if (timeInSeconds <= 0) return { valid: false, reason: '用时无效' };
+  if (moves < cfg.pairs) return { valid: false, reason: '步数异常' };
+  if (moves > cfg.moveLimit) return { valid: false, reason: '超过步数限制' };
+  if (timeInSeconds > cfg.timeTarget) return { valid: false, reason: '超过时间目标' };
+  if (!gameStarted) return { valid: false, reason: '游戏未开始' };
+  if (!gameEnded) return { valid: false, reason: '游戏未结束' };
+  
+  return { valid: true };
+}
 
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -219,6 +253,8 @@ function resetGameState() {
   elapsedTime = 0;
   gameStarted = false;
   isProcessing = false;
+  gameEnded = false;
+  clearAllPendingTimeouts();
   
   if (timer) {
     clearInterval(timer);
@@ -294,7 +330,8 @@ function checkMatch() {
   const cfg = currentLevelConfig;
 
   if (id1 === id2) {
-    setTimeout(() => {
+    safeSetTimeout(() => {
+      if (gameEnded) return;
       card1.classList.add('matched');
       card2.classList.add('matched');
       matchedPairs++;
@@ -307,7 +344,8 @@ function checkMatch() {
       }
     }, 500);
   } else {
-    setTimeout(() => {
+    safeSetTimeout(() => {
+      if (gameEnded) return;
       unflipCard(card1);
       unflipCard(card2);
       flippedCards = [];
@@ -323,6 +361,7 @@ function checkMatch() {
 function startTimer() {
   startTime = Date.now() - elapsedTime;
   timer = setInterval(() => {
+    if (gameEnded) return;
     elapsedTime = Date.now() - startTime;
     updateTimerDisplay();
     
@@ -363,8 +402,16 @@ function renderStars(count) {
 }
 
 function endGame(won, reason = null) {
-  clearInterval(timer);
-  timer = null;
+  if (gameEnded) return;
+  gameEnded = true;
+  
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+  clearAllPendingTimeouts();
+  isProcessing = true;
+  flippedCards = [];
   
   if (won) {
     const cfg = currentLevelConfig;
@@ -374,7 +421,7 @@ function endGame(won, reason = null) {
       <span class="difficulty-tag-inline" style="background:${cfg.difficultyColor}">${cfg.difficultyName}</span>`;
     renderStars(calculateStars());
     
-    setTimeout(() => {
+    safeSetTimeout(() => {
       winModal.classList.remove('hidden');
     }, 500);
   } else {
@@ -386,13 +433,30 @@ function endGame(won, reason = null) {
       loseMessage.textContent = '已超过目标时间，下次加油！';
     }
     
-    setTimeout(() => {
+    safeSetTimeout(() => {
       loseModal.classList.remove('hidden');
     }, 500);
   }
 }
 
 async function submitScore() {
+  const validation = validateScoreForSubmission();
+  if (!validation.valid) {
+    alert(`成绩校验失败：${validation.reason}`);
+    console.error('成绩校验失败详情:', {
+      reason: validation.reason,
+      matchedPairs,
+      pairs: currentLevelConfig?.pairs,
+      moves,
+      moveLimit: currentLevelConfig?.moveLimit,
+      timeInSeconds: Math.floor(elapsedTime / 1000),
+      timeTarget: currentLevelConfig?.timeTarget,
+      gameStarted,
+      gameEnded
+    });
+    return;
+  }
+  
   const playerName = playerNameInput.value.trim() || '匿名玩家';
   const timeInSeconds = Math.floor(elapsedTime / 1000);
   const cfg = currentLevelConfig;

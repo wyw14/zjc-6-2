@@ -198,6 +198,49 @@ app.get('/api/shuffle', (req, res) => {
   });
 });
 
+function validateScore(level, scoreData) {
+  const { time, moves } = scoreData;
+  const errors = [];
+  
+  if (!Number.isFinite(time) || time <= 0) {
+    errors.push('无效的时间数据');
+  }
+  
+  if (!Number.isInteger(moves) || moves < 0) {
+    errors.push('无效的步数数据');
+  }
+  
+  if (errors.length > 0) return { valid: false, errors };
+  
+  if (moves < level.pairs) {
+    errors.push(`步数异常：少于最少需要的${level.pairs}步`);
+  }
+  
+  if (moves > level.moveLimit) {
+    errors.push(`超过步数限制${level.moveLimit}步`);
+  }
+  
+  if (time > level.timeTarget) {
+    errors.push(`超过时间目标${level.timeTarget}秒`);
+  }
+  
+  const minTimePerPair = 1;
+  const minTime = level.pairs * minTimePerPair;
+  if (time < minTime) {
+    errors.push(`时间数据异常：少于理论最小值${minTime}秒`);
+  }
+  
+  const maxTime = level.timeTarget + 1;
+  if (time > maxTime) {
+    errors.push(`时间数据异常`);
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors: errors
+  };
+}
+
 app.post('/api/score', (req, res) => {
   const { time, moves, playerName, levelId } = req.body;
   
@@ -205,24 +248,37 @@ app.post('/api/score', (req, res) => {
     return res.status(400).json({ error: '请提供关卡ID' });
   }
   
-  if (typeof time !== 'number' || time <= 0) {
-    return res.status(400).json({ error: '无效的成绩数据' });
-  }
-  
   const level = getLevelById(levelId);
   if (!level) {
     return res.status(404).json({ error: '未找到该关卡' });
+  }
+  
+  const validation = validateScore(level, { time, moves });
+  if (!validation.valid) {
+    console.warn('[Score Rejected]', {
+      levelId,
+      time,
+      moves,
+      levelConfig: { pairs: level.pairs, moveLimit: level.moveLimit, timeTarget: level.timeTarget },
+      errors: validation.errors
+    });
+    return res.status(400).json({ 
+      error: '成绩数据校验失败', 
+      details: validation.errors 
+    });
   }
   
   if (!leaderboards[levelId]) {
     leaderboards[levelId] = [];
   }
   
+  const safePlayerName = String(playerName || '匿名玩家').trim().slice(0, 20) || '匿名玩家';
+  
   const entry = {
     id: Date.now() + Math.random(),
-    time: time,
-    moves: moves || 0,
-    playerName: playerName || '匿名玩家',
+    time: Math.floor(time),
+    moves: moves,
+    playerName: safePlayerName,
     date: new Date().toLocaleString('zh-CN'),
     levelId: levelId
   };
@@ -236,6 +292,14 @@ app.post('/api/score', (req, res) => {
   leaderboards[levelId] = lb.slice(0, 20);
   
   const rank = lb.findIndex(e => e.id === entry.id) + 1;
+  
+  console.log('[Score Accepted]', {
+    level: `${level.themeName}/${level.difficultyName}`,
+    player: safePlayerName,
+    time: time,
+    moves: moves,
+    rank: rank
+  });
   
   res.json({
     success: true,
